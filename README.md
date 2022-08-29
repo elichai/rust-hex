@@ -45,7 +45,7 @@ In order to use this crate, you have to add it under `[dependencies]` to your `C
 
 ```toml
 [dependencies]
-hex = "0.4"
+hex = "0.5"
 ```
 
 By default this will import `std`, if you are working in a
@@ -54,7 +54,7 @@ environment you can turn this off by adding the following
 
 ```toml
 [dependencies]
-hex = { version = "0.4", default-features = false }
+hex = { version = "0.5", default-features = false }
 ```
 
 ## Features

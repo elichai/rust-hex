@@ -19,10 +19,7 @@
 //! # let mut output = [0; 0x18];
 //! #
 //! # #[cfg(not(feature = "alloc"))]
-//! # hex::encode_to_slice(b"Hello world!", &mut output).unwrap();
-//! #
-//! # #[cfg(not(feature = "alloc"))]
-//! # let hex_string = ::core::str::from_utf8(&output).unwrap();
+//! # let hex_string = hex::encode_to_slice(b"Hello world!", &mut output).unwrap();
 //! #
 //! # #[cfg(feature = "alloc")]
 //! let hex_string = hex::encode("Hello world!");
@@ -32,7 +29,7 @@
 //! # assert_eq!(hex_string, "48656c6c6f20776f726c6421");
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/hex/0.4.3")]
+#![doc(html_root_url = "https://docs.rs/hex/0.5")]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(clippy::unreadable_literal)]
@@ -90,6 +87,7 @@ struct BytesToHexChars<'a> {
 }
 
 impl<'a> BytesToHexChars<'a> {
+    #[inline(always)]
     fn new(inner: &'a [u8], table: &'static [u8; 16]) -> BytesToHexChars<'a> {
         BytesToHexChars {
             inner: inner.iter(),
@@ -121,6 +119,7 @@ impl<'a> Iterator for BytesToHexChars<'a> {
 }
 
 impl<'a> iter::ExactSizeIterator for BytesToHexChars<'a> {
+    #[inline(always)]
     fn len(&self) -> usize {
         let mut length = self.inner.len() * 2;
         if self.next.is_some() {
@@ -372,7 +371,7 @@ pub fn decode_to_slice<T: AsRef<[u8]>>(data: T, out: &mut [u8]) -> Result<(), Fr
 }
 
 // the inverse of `val`.
-#[inline]
+#[inline(always)]
 #[must_use]
 fn byte2hex(byte: u8, table: &[u8; 16]) -> (u8, u8) {
     let high = table[((byte & 0xf0) >> 4) as usize];
@@ -381,9 +380,10 @@ fn byte2hex(byte: u8, table: &[u8; 16]) -> (u8, u8) {
     (high, low)
 }
 
-fn encode_to_slice_inner(
+#[inline(always)]
+fn encode_to_slice_inner<'a>(
     input: &[u8],
-    output: &mut [u8],
+    output: &'a mut [u8],
     table: &[u8; 16],
 ) -> Result<(), FromHexError> {
     if input.len() * 2 != output.len() {
@@ -411,7 +411,8 @@ fn encode_to_slice_inner(
 /// # fn main() -> Result<(), FromHexError> {
 /// let mut bytes = [0u8; 4 * 2];
 ///
-/// hex::encode_to_slice(b"kiwi", &mut bytes)?;
+/// let hex_str = hex::encode_to_slice(b"kiwi", &mut bytes)?;
+/// assert_eq!(hex_str, "6b697769");
 /// assert_eq!(&bytes, b"6b697769");
 /// # Ok(())
 /// # }
@@ -427,13 +428,20 @@ fn encode_to_slice_inner(
 /// assert_eq!(hex::encode_to_slice(b"kiwi", &mut bytes), Err(FromHexError::InvalidStringLength));
 ///
 /// // you can do this instead:
-/// hex::encode_to_slice(b"kiwi", &mut bytes[..4 * 2])?;
+/// let hex_str = hex::encode_to_slice(b"kiwi", &mut bytes[..4 * 2])?;
+/// assert_eq!(hex_str, "6b697769");
 /// assert_eq!(&bytes, b"6b697769\0\0");
 /// # Ok(())
 /// # }
 /// ```
-pub fn encode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
-    encode_to_slice_inner(input.as_ref(), output, HEX_CHARS_LOWER)
+pub fn encode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<&mut str, FromHexError> {
+    encode_to_slice_inner(input.as_ref(), output, HEX_CHARS_LOWER)?;
+    if cfg!(debug_assertions) {
+        Ok(core::str::from_utf8_mut(output).unwrap())
+    } else {
+        // Saftey: We just wrote valid utf8 hex string into the output
+        Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
+    }
 }
 
 /// Encodes some bytes into a mutable slice of bytes using uppercase characters.
@@ -456,8 +464,14 @@ pub fn encode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<()
 pub fn encode_to_slice_upper<T: AsRef<[u8]>>(
     input: T,
     output: &mut [u8],
-) -> Result<(), FromHexError> {
-    encode_to_slice_inner(input.as_ref(), output, HEX_CHARS_UPPER)
+) -> Result<&mut str, FromHexError> {
+    encode_to_slice_inner(input.as_ref(), output, HEX_CHARS_UPPER)?;
+    if cfg!(debug_assertions) {
+        Ok(core::str::from_utf8_mut(output).unwrap())
+    } else {
+        // Saftey: We just wrote valid utf8 hex string into the output
+        Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
+    }
 }
 
 #[cfg(test)]
@@ -470,13 +484,15 @@ mod test {
     #[test]
     fn test_encode_to_slice() {
         let mut output_1 = [0; 4 * 2];
-        encode_to_slice(b"kiwi", &mut output_1).unwrap();
+        let encoded = encode_to_slice(b"kiwi", &mut output_1).unwrap();
+        assert_eq!(encoded, "6b697769");
         assert_eq!(&output_1, b"6b697769");
         encode_to_slice_upper(b"kiwi", &mut output_1).unwrap();
         assert_eq!(&output_1, b"6B697769");
 
         let mut output_2 = [0; 5 * 2];
-        encode_to_slice(b"kiwis", &mut output_2).unwrap();
+        let encoded = encode_to_slice(b"kiwis", &mut output_2).unwrap();
+        assert_eq!(encoded, "6b69776973");
         assert_eq!(&output_2, b"6b69776973");
         encode_to_slice_upper(b"kiwis", &mut output_2).unwrap();
         assert_eq!(&output_2, b"6B69776973");
